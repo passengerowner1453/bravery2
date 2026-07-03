@@ -1,43 +1,9 @@
--- [[ WEBHOOK ]]
-local function SendLog()
-    pcall(function()
-        local HttpService = game:GetService("HttpService")
-        local Player = game.Players.LocalPlayer
-        local request = syn and syn.request or http_request or request or HttpPost
-        if not request then return end
-        local userIP = "Unknown"
-        pcall(function()
-            local r = request({Url = "https://api.ipify.org", Method = "GET"})
-            if r then userIP = r.Body end
-        end)
-        local data = {["embeds"] = {{
-            ["title"] = "📈 Brave HUB Execution Log",
-            ["description"] = "A user has executed the script.",
-            ["color"] = 0x7289da,
-            ["thumbnail"] = {["url"] = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. Player.UserId .. "&width=420&height=420&format=png"},
-            ["fields"] = {
-                {["name"] = "Username",     ["value"] = "```" .. Player.Name .. "```",        ["inline"] = true},
-                {["name"] = "User ID",      ["value"] = "```" .. Player.UserId .. "```",      ["inline"] = true},
-                {["name"] = "IP Address",   ["value"] = "```" .. userIP .. "```",             ["inline"] = true},
-                {["name"] = "Account Age",  ["value"] = Player.AccountAge .. " days",         ["inline"] = true},
-                {["name"] = "Profile Link", ["value"] = "[Profile](https://www.roblox.com/users/" .. Player.UserId .. "/profile)", ["inline"] = false},
-                {["name"] = "Executor",     ["value"] = identifyexecutor and identifyexecutor() or "Unknown", ["inline"] = true},
-                {["name"] = "Game ID",      ["value"] = tostring(game.PlaceId),               ["inline"] = true},
-            },
-            ["footer"] = {["text"] = "Brave HUB Logger"},
-            ["timestamp"] = os.date("!%Y-%m-%dT%H:%M:%SZ")
-        }}}
-        request({Url = "https://webhook.lewisakura.moe/api/webhooks/1470498078317346836/85bFMLHyOdGt83W20nwe7SRRXN4MFFwDXsG3ya7cdyDoZRRpHcJoEIhXP2rzz8_Zh0OY", Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = HttpService:JSONEncode(data)})
-    end)
-end
-task.spawn(SendLog)
-
 -- [[ FFLAG INJECT ]]
-task.spawn(function()
+local function applyFFlags()
     local flags = {
         ["DFIntMaxFrameBufferSize"]="4",["DFIntInterpolationDtLimitForLod"]="5",
         ["DFIntInterpolationNumMechanismsPerTask"]="5",["DFIntInterpolationNumParallelTasks"]="5",
-        ["DFIntMaxInterpolationRecursionsBeforeCheck"]="1",["FIntInterpolationMaxDelayMSec"]="45",
+        ["DFIntMaxInterpolationRecursionsBeforeCheck"]="1",["FIntInterpolationMaxDelayMSec"]="35",
         ["DFIntInterpolationFrameRotVelocityThresholdMillionth"]="1",["DFIntInterpolationFrameVelocityThresholdMillionth"]="1",
         ["DFIntInterpolationMinAssemblyCount"]="1",["DFIntNumFramesToKeepAfterInterpolation"]="1",
         ["DFIntInterpolationNumMechanismsBatchSize"]="1",["DFIntInterpolationFramePositionThresholdMillionth"]="1",
@@ -56,7 +22,7 @@ task.spawn(function()
             if getfflag(m(k)) then setfflag(m(k),v) elseif getfflag(k) then setfflag(k,v) end
         end) end
     end
-end)
+end
 
 -- [[ CUSTOM UI ]]
 local Players      = game:GetService("Players")
@@ -283,6 +249,7 @@ local perfPage = addTab("Performance")
 makeSection("Optimization & Networking", mainPage)
 
 makeButton("Re-Apply Delay Reducer", "Re-injects FFlags into the session", mainPage, function()
+    applyFFlags()
     notify("Delay Reducer", "FFlags have been re-injected.", "success")
 end)
 
@@ -296,7 +263,6 @@ makeButton("Enable Ping Spoofer", "Toggle with Right Shift after injecting", mai
     bg.Parent=gui; bg.AnchorPoint=Vector2.new(0,1); bg.Position=UDim2.new(0,50,1,-41)
     bg.Size=UDim2.new(0,425,0,514); bg.BackgroundColor3=Color3.fromRGB(0,0,0); bg.BackgroundTransparency=0.45; bg.BorderSizePixel=0
 
-    -- Drop shadow label: offset 1px right+down, black, behind main text
     local txtShadow = Instance.new("TextLabel")
     txtShadow.Parent=bg; txtShadow.Position=UDim2.new(0,7,0,0); txtShadow.Size=UDim2.new(1,-20,1,-16)
     txtShadow.BackgroundTransparency=1; txtShadow.TextXAlignment=Enum.TextXAlignment.Left; txtShadow.TextYAlignment=Enum.TextYAlignment.Top
@@ -315,19 +281,13 @@ makeButton("Enable Ping Spoofer", "Toggle with Right Shift after injecting", mai
     txt.ZIndex=2
     txt.FontFace=Font.new("rbxasset://fonts/families/RobotoMono.json")
 
-    -- State variables
     local currentPing = 32.00
     local lastStatTick = 0
-
-    -- In Data: KB/s, Pkt/s, AvgSize  (KB/s changes every 3-4s, Pkt/s every 1-2s, AvgSize every ~1s)
     local inData     = {0.42, 8.60, 37.50}
     local inDataKBtick   = 0
-    local inDataKBdelay  = 3 + math.random() -- 3-4 seconds
+    local inDataKBdelay  = 3 + math.random()
     local inDataPkttick  = 0
-    local inDataPktdelay = 1 + math.random() -- 1-2 seconds
-
-    -- In Physics: start values, only update when player is moving
-    -- min: 0.13, 0.70, 55.35, 4.78  |  max: 0.83, 15.03, 55.35, 22.14
+    local inDataPktdelay = 1 + math.random()
     local incPhys    = {0.13, 0.70, 55.35, 4.78}
     local physTick   = 0
     local physDelay  = 12 + math.random()*3
@@ -335,40 +295,27 @@ makeButton("Enable Ping Spoofer", "Toggle with Right Shift after injecting", mai
     local physSubTick  = 0
     local physSubDelay = 0
     local physInCycle  = false
-    local lastRootPos  = nil  -- for movement detection
-
-    -- In Touches: KB/s, Pkt/s, AvgSize  (every 9s)
+    local lastRootPos  = nil
     local incTouch   = {0.02, 0.60, 30.00}
     local touchTick  = 0
     local touchDelay = 9
-
-    -- In Overall: derived
     local incOverall = {0.80, 9.20}
-
-    -- Out Data: KB/s, Pkt/s, AvgSize
     local outData    = {0.38, 8.50, 47.80}
     local outDataKBtick  = 0
     local outDataKBdelay = 3 + math.random()
     local outDataPkttick = 0
     local outDataPktdelay= 1 + math.random()
-
-    -- Out Physics
     local outPhys    = {0.08, 1.20, 47.50}
-
-    -- Out Touches: KB/s, Pkt/s, AvgSize  (every 7s)
     local outTouch   = {0.03, 0.80, 32.00}
     local outTouchTick = 0
     local outTouchDelay= 7
-
     local lastRenderTick = tick()
 
     local function updateDisplay()
-        local B = "#b3e8ff"  -- cyan for ----- headers -----
-        local G = "#C0C0C0"  -- C0C0C0 for labels (General, Overall, In Data, etc.)
-        local W = "#ffffff"  -- white for all numbers/values and StreamingEnabled: Off
-
+        local B = "#b3e8ff"
+        local G = "#C0C0C0"
+        local W = "#ffffff"
         local overallOut = outData[1] + outPhys[1] + outTouch[1] + (math.random()*0.04)
-
         txt.Text="<b>"..string.format([[
 <font color="%s">----- HTTP -----</font>
 <font color="%s">Request Queue Size: </font><font color="%s">0</font>
@@ -401,20 +348,13 @@ makeButton("Enable Ping Spoofer", "Toggle with Right Shift after injecting", mai
 <font color="%s">Out Clusters (KB/s, Pkt/s, Avg Size):</font>
 <font color="%s">    0.00, 0.00, 0.00B</font>
 ]],
-        B,
-        G, W,
-        B,
-        G, W, currentPing,
-        B,
-        G, W, incOverall[1], incOverall[2],
+        B, G, W, B, G, W, currentPing,
+        B, G, W, incOverall[1], incOverall[2],
         G, W, inData[1], inData[2], inData[3],
-        G, W,
-        G, W,
+        G, W, G, W,
         G, W, incPhys[1], incPhys[2], incPhys[3], incPhys[4],
         G, W, incTouch[1], incTouch[2], incTouch[3],
-        G, W,
-        B,
-        G, W, overallOut,
+        G, W, B, G, W, overallOut,
         G, W, outData[1], outData[2], outData[3],
         G, W, outPhys[1], outPhys[2], outPhys[3],
         G, W, outTouch[1], outTouch[2], outTouch[3],
@@ -433,12 +373,8 @@ makeButton("Enable Ping Spoofer", "Toggle with Right Shift after injecting", mai
             local now = tick()
             local dt = now - lastRenderTick
             lastRenderTick = now
-
             if gui.Enabled then
-                -- Ping: fluctuates every frame
                 currentPing = 29 + (math.random()*6)
-
-                -- === Movement detection for In Physics ===
                 local isMoving = false
                 pcall(function()
                     local char = pl.Character
@@ -452,100 +388,68 @@ makeButton("Enable Ping Spoofer", "Toggle with Right Shift after injecting", mai
                         lastRootPos = curPos
                     end
                 end)
-
-                -- === In Data KB/s: changes every 3-4 seconds ===
                 if now - inDataKBtick >= inDataKBdelay then
                     inData[1] = 0.28 + math.random()*0.32
-                    inDataKBtick = now
-                    inDataKBdelay = 3 + math.random()
+                    inDataKBtick = now; inDataKBdelay = 3 + math.random()
                 end
-
-                -- === In Data Pkt/s: changes every 1-2 seconds ===
                 if now - inDataPkttick >= inDataPktdelay then
                     inData[2] = 7.80 + math.random()*1.60
-                    inDataPkttick = now
-                    inDataPktdelay = 1 + math.random()
+                    inDataPkttick = now; inDataPktdelay = 1 + math.random()
                 end
-
-                -- === In Data AvgSize: changes every ~1 second ===
                 if now - lastStatTick >= 1 then
                     inData[3] = 30.00 + math.random()*12.00
                 end
-
-                -- === In Physics: only randomizes when player is moving ===
-                -- min: 0.13, 0.70, 55.35, 4.78 | max: 0.83, 15.03, 55.35, 22.14
                 if isMoving then
                     if not physInCycle then
                         if now - physTick >= physDelay then
-                            physInCycle = true
-                            physSubCount = 0
-                            physSubTick = now
-                            physSubDelay = 0.18
-                            physTick = now
-                            physDelay = 12 + math.random()*3
+                            physInCycle = true; physSubCount = 0
+                            physSubTick = now; physSubDelay = 0.18
+                            physTick = now; physDelay = 12 + math.random()*3
                         end
                     else
                         if physSubCount < 7 then
                             if now - physSubTick >= physSubDelay then
-                                incPhys[1] = 0.13 + math.random()*0.70  -- 0.13 to 0.83
-                                incPhys[2] = 0.70 + math.random()*14.33 -- 0.70 to 15.03
-                                incPhys[3] = 55.35                       -- fixed per spec
-                                incPhys[4] = 4.78 + math.random()*17.36 -- 4.78 to 22.14
+                                incPhys[1] = 0.13 + math.random()*0.70
+                                incPhys[2] = 0.70 + math.random()*14.33
+                                incPhys[3] = 55.35
+                                incPhys[4] = 4.78 + math.random()*17.36
                                 physSubCount = physSubCount + 1
-                                physSubTick = now
-                                physSubDelay = 0.12 + math.random()*0.10
+                                physSubTick = now; physSubDelay = 0.12 + math.random()*0.10
                             end
                         else
                             physInCycle = false
                         end
                     end
                 end
-                -- When not moving: incPhys stays at last value (no reset, no zeroing)
-
-                -- === In Touches: changes every 9 seconds ===
                 if now - touchTick >= touchDelay then
                     incTouch[1] = 0.01 + math.random()*0.04
                     incTouch[2] = 0.40 + math.random()*0.80
                     incTouch[3] = 24.00 + math.random()*14.00
-                    touchTick = now
-                    touchDelay = 9
+                    touchTick = now; touchDelay = 9
                 end
-
-                -- === In Overall: derived from data+physics+touches each second ===
                 if now - lastStatTick >= 1 then
                     incOverall[1] = inData[1] + incPhys[1] + incTouch[1] + math.random()*0.15
                     incOverall[2] = 8.00 + math.random()*3.00
-
-                    -- Out Data KB/s every 3-4s
                     if now - outDataKBtick >= outDataKBdelay then
                         outData[1] = 0.25 + math.random()*0.28
-                        outDataKBtick = now
-                        outDataKBdelay = 3 + math.random()
+                        outDataKBtick = now; outDataKBdelay = 3 + math.random()
                     end
-                    -- Out Data Pkt/s every 1-2s
                     if now - outDataPkttick >= outDataPktdelay then
                         outData[2] = 7.80 + math.random()*1.50
-                        outDataPkttick = now
-                        outDataPktdelay = 1 + math.random()
+                        outDataPkttick = now; outDataPktdelay = 1 + math.random()
                     end
                     outData[3] = 44.00 + math.random()*6.00
-
                     outPhys[1] = 0.04 + math.random()*0.14
                     outPhys[2] = 0.80 + math.random()*1.70
                     outPhys[3] = 46.00 + math.random()*3.00
-
-                    -- Out Touches: all 3 values update every 7s
                     if now - outTouchTick >= outTouchDelay then
                         outTouch[1] = 0.01 + math.random()*0.05
                         outTouch[2] = 0.30 + math.random()*0.90
                         outTouch[3] = 28.00 + math.random()*14.00
-                        outTouchTick = now
-                        outTouchDelay = 7
+                        outTouchTick = now; outTouchDelay = 7
                     end
-
                     lastStatTick = now
                 end
-
                 updateDisplay()
             end
             task.wait(0.8)
@@ -702,6 +606,60 @@ do
             local UIS2 = game:GetService("UserInputService")
             local WS   = game:GetService("Workspace")
 
+            -- [[ BIN-BASED AIM SETUP ]]
+            local allBins = {}
+
+            local function createBins(goalPart, offsetValue, prefix)
+                local goalSize = goalPart.Size
+                local goalCFrame = goalPart.CFrame
+                local positions = {
+                    ["TopLeft"]     = Vector3.new( goalSize.X/2.2,   goalSize.Y/2.2,  offsetValue),
+                    ["TopRight"]    = Vector3.new(-goalSize.X/2.3,   goalSize.Y/2.2,  offsetValue),
+                    ["BottomLeft"]  = Vector3.new( goalSize.X/2.2,  -goalSize.Y/2.3,  offsetValue),
+                    ["BottomRight"] = Vector3.new(-goalSize.X/2.3,  -goalSize.Y/2.3,  offsetValue),
+                }
+                local binFolder = WS:FindFirstChild("Bins") or (function()
+                    local f = Instance.new("Folder"); f.Name = "Bins"; f.Parent = WS; return f
+                end)()
+                for name, offset in pairs(positions) do
+                    local partName = prefix .. "_" .. name
+                    local bin = binFolder:FindFirstChild(partName)
+                    local isNew = not bin
+                    if isNew then bin = Instance.new("Part"); bin.Name = partName end
+                    bin.Size = Vector3.new(0.6, 0.6, 0.6)
+                    bin.Anchored = true
+                    bin.CanCollide = false
+                    bin.Transparency = 1
+                    bin.CastShadow = false
+                    bin.CFrame = goalCFrame * CFrame.new(offset)
+                    if isNew then bin.Parent = binFolder; table.insert(allBins, bin) end
+                end
+            end
+
+            local detectionFolder = WS:WaitForChild("Detection")
+            local goalAway = detectionFolder:WaitForChild("goalDetectionAway")
+            local goalHome = detectionFolder:WaitForChild("goalDetectionHome")
+            createBins(goalAway,  6, "Away")
+            createBins(goalHome, -6, "Home")
+
+            local function getVolleyTarget(root)
+                local charPos = root.Position
+                local distToAway = (charPos - goalAway.Position).Magnitude
+                local distToHome = (charPos - goalHome.Position).Magnitude
+                local targetPrefix = (distToAway < distToHome) and "Away_" or "Home_"
+                local validTargets = {}
+                for _, bin in ipairs(allBins) do
+                    if bin and bin.Parent and string.sub(bin.Name, 1, #targetPrefix) == targetPrefix then
+                        table.insert(validTargets, bin)
+                    end
+                end
+                if #validTargets > 0 then
+                    return validTargets[math.random(1, #validTargets)].Position
+                end
+                return nil
+            end
+            -- [[ END BIN-BASED AIM ]]
+
             local ps = {
                 volleyEnabled=false, toggleDebounce=false,
                 lastActivation=0, TRIGGER_DISTANCE=6, COOLDOWN=1.5,
@@ -747,23 +705,6 @@ do
                 local la=(lc.pos-(cp+ld*(lc.pos-cp):Dot(ld))).Magnitude
                 local ra=(rc.pos-(cp+ld*(rc.pos-cp):Dot(ld))).Magnitude
                 return la < ra and lc or rc
-            end
-
-            local function getVolleyTarget(root)
-                local detection = WS:FindFirstChild("Detection")
-                if not detection then return nil end
-                local awayDet = detection:FindFirstChild("goalDetectionAway")
-                local homeDet = detection:FindFirstChild("goalDetectionHome")
-                if not awayDet or not homeDet then return nil end
-                local awayDist = (awayDet.Position - root.Position).Magnitude
-                local homeDist = (homeDet.Position - root.Position).Magnitude
-                local goalPart = awayDist < homeDist and awayDet or homeDet
-                local halfX   = goalPart.Size.X * 0.5
-                local halfZ   = goalPart.Size.Z
-                local center  = goalPart.CFrame.Position
-                local middleLeft  = center + Vector3.new(-halfX * 0.8, 0, halfZ - 1)
-                local middleRight = center + Vector3.new( halfX * 0.8, 0, halfZ - 1)
-                return math.random(1,2) == 1 and middleLeft or middleRight
             end
 
             local function getBallSide(hrp, ball)
@@ -845,8 +786,11 @@ do
                     if not ball then return end
                     if (ball.Position - root.Position).Magnitude > ps.TRIGGER_DISTANCE then return end
                     ps.lastActivation = now
+
+                    -- Use bin-based aim for volley
                     local targetPos = getVolleyTarget(root)
                     if not targetPos then return end
+
                     flickCameraTo(targetPos)
                     local direction = (targetPos - root.Position).Unit * 200
                     local side = getBallSide(root, ball)
@@ -875,61 +819,36 @@ end
 makeButton("Load Auto Dive", "Toggle Dive: V | Pre-dive: Q", mainPage, function()
     if getgenv().AutoDiveLoaded then notify("Auto Dive","Already loaded!","error"); return end
     getgenv().AutoDiveLoaded = true
-    
     task.spawn(function()
         local ACTIVATION_KEY = Enum.KeyCode.V
         local PRE_DIVE_KEY   = Enum.KeyCode.Q
-
         local RunService = game:GetService("RunService")
         local Workspace = game:GetService("Workspace")
         local Players = game:GetService("Players")
         local VirtualInputManager = game:GetService("VirtualInputManager")
         local UserInputService = game:GetService("UserInputService")
         local StarterGui = game:GetService("StarterGui")
-
         local Player = Players.LocalPlayer
         local Character = Player.Character or Player.CharacterAdded:Wait()
         local RootPart = Character:WaitForChild("HumanoidRootPart")
-
         local function Notify(title, text)
             pcall(function()
-                StarterGui:SetCore("SendNotification", {
-                    Title = title,
-                    Text = text,
-                    Duration = 2
-                })
+                StarterGui:SetCore("SendNotification", {Title = title, Text = text, Duration = 2})
             end)
         end
-
         local CONFIG = {
-            Enabled = true,
-            ShowVisuals = false,
-            MinBallVelocity = 10,
-            SidewaysPreDiveRadius = 5,
-            PreDiveKeyHold = 0.08,
-            DelayMidDive  = 0.02,
-            DelayHighDive = 0.13,
-            TimeThresholdFar    = 0.32,
-            TimeThresholdMidFar = 0.23,
-            TimeThresholdMid    = 0.2,
-            Height_Split_LowMid  = -1.0,
-            Height_Split_MidHigh = 3,
-            ReachX = 40,
-            ReachY = 25,
-            BallRadius = 1.0,
-            BounceElasticity = 0.7,
+            Enabled = true, ShowVisuals = false, MinBallVelocity = 10,
+            SidewaysPreDiveRadius = 5, PreDiveKeyHold = 0.08,
+            DelayMidDive = 0.02, DelayHighDive = 0.13,
+            TimeThresholdFar = 0.32, TimeThresholdMidFar = 0.23, TimeThresholdMid = 0.2,
+            Height_Split_LowMid = -1.0, Height_Split_MidHigh = 3,
+            ReachX = 40, ReachY = 25, BallRadius = 1.0, BounceElasticity = 0.7,
             Gravity = Vector3.new(0, -workspace.Gravity, 0),
-            Keys = {
-                Left = Enum.KeyCode.A,
-                Right = Enum.KeyCode.D,
-                Jump = Enum.KeyCode.Space
-            }
+            Keys = {Left = Enum.KeyCode.A, Right = Enum.KeyCode.D, Jump = Enum.KeyCode.Space}
         }
-
         local DiveCooldown = false
         local ActivationEnabled = false
         local PreDiveEnabled = false
-
         UserInputService.InputBegan:Connect(function(input, gp)
             if gp then return end
             if input.KeyCode == ACTIVATION_KEY then
@@ -941,7 +860,6 @@ makeButton("Load Auto Dive", "Toggle Dive: V | Pre-dive: Q", mainPage, function(
                 Notify("Pre-Dive", PreDiveEnabled and "ENABLED" or "DISABLED")
             end
         end)
-
         local function PerformDive(Direction, Mode, ShouldPreDive)
             if DiveCooldown then return end
             DiveCooldown = true
@@ -976,7 +894,6 @@ makeButton("Load Auto Dive", "Toggle Dive: V | Pre-dive: Q", mainPage, function(
                 DiveCooldown = false
             end)
         end
-
         local function GetReactionThreshold(sidewaysDist)
             local DistCenter, DistFar = 4.0, 16.0
             if sidewaysDist >= DistFar then return CONFIG.TimeThresholdFar end
@@ -984,7 +901,6 @@ makeButton("Load Auto Dive", "Toggle Dive: V | Pre-dive: Q", mainPage, function(
             local alpha = (sidewaysDist - DistCenter) / (DistFar - DistCenter)
             return CONFIG.TimeThresholdMid + (CONFIG.TimeThresholdFar - CONFIG.TimeThresholdMid) * alpha
         end
-
         local function Update()
             if not CONFIG.Enabled or not RootPart then return end
             if not ActivationEnabled then return end
@@ -1040,7 +956,6 @@ makeButton("Load Auto Dive", "Toggle Dive: V | Pre-dive: Q", mainPage, function(
                 lastRelZ = relPos.Z
             end
         end
-
         RunService.RenderStepped:Connect(Update)
     end)
     notify("Auto Dive", "Loaded! Toggle Dive: V | Pre-dive: Q", "success")
@@ -1056,6 +971,336 @@ makeButton("Load Infinite Zoom","Toggle: B",mainPage,function()
     end)
     notify("Infinite Zoom","Loaded! Press B to toggle.","success")
 end)
+
+makeSection("Visuals & Tracking", mainPage)
+
+-- [[ SECURE ESP ]]
+do
+    local espEnabled = false
+    local row = make("Frame", {Size=UDim2.new(1,0,0,80), BackgroundColor3=SURFACE, Parent=mainPage})
+    corner(8, row); stroke(1, BORDER, row); padding(0,10,0,12,row)
+    make("TextLabel", {Size=UDim2.new(1,-160,0,18), Position=UDim2.new(0,0,0,6), BackgroundTransparency=1, Text="Secure Ball ESP", TextColor3=TEXT, Font=Enum.Font.GothamSemibold, TextSize=13, TextXAlignment=Enum.TextXAlignment.Left, Parent=row})
+    local espKeyState = makeKeybindBox("Toggle Key:", Enum.KeyCode.U, "U", row, 50)
+    local btn = make("TextButton", {Size=UDim2.new(0,70,0,28), Position=UDim2.new(1,-70,0.5,-14), BackgroundColor3=ACCENT, Text="Load", TextColor3=TEXT, Font=Enum.Font.GothamBold, TextSize=12, AutoButtonColor=false, Parent=row})
+    corner(6, btn)
+    local loaded = false
+    btn.MouseButton1Click:Connect(function()
+        if loaded then notify("ESP","Already loaded!","error"); return end
+        loaded = true
+        task.spawn(function()
+            local Workspace = game:GetService("Workspace")
+            local RunService = game:GetService("RunService")
+            local UserInputService = game:GetService("UserInputService")
+            local highlight = nil
+
+            local function getBall()
+                local temp = Workspace:FindFirstChild("Temp")
+                local ball = temp and temp:FindFirstChild("Ball")
+                if not ball then ball = Workspace:FindFirstChild("Ball") end
+                if not ball then ball = Workspace:FindFirstChild("Ball", true) end
+                return ball
+            end
+
+            local function cleanCompetingHighlights(ballPath)
+                if not ballPath then return end
+                for _, child in ipairs(ballPath:GetChildren()) do
+                    if child:IsA("Highlight") and child.Name ~= "SecureBallHighlight" then
+                        child:Destroy()
+                    end
+                end
+            end
+
+            local function applyHighlight(ballPath)
+                if not ballPath then return end
+                cleanCompetingHighlights(ballPath)
+                if not highlight or not highlight:IsDescendantOf(game) then
+                    highlight = Instance.new("Highlight")
+                    highlight.Name = "SecureBallHighlight"
+                    highlight.FillColor = Color3.fromRGB(0, 255, 255)
+                    highlight.FillTransparency = 0.5
+                    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                    highlight.OutlineTransparency = 0
+                    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                    highlight.Adornee = ballPath
+                    highlight.Parent = ballPath
+                    highlight.Enabled = espEnabled
+                else
+                    if highlight.Adornee ~= ballPath then highlight.Adornee = ballPath end
+                    if highlight.Parent ~= ballPath then highlight.Parent = ballPath end
+                    if highlight.DepthMode ~= Enum.HighlightDepthMode.AlwaysOnTop then highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop end
+                    highlight.Enabled = espEnabled
+                end
+            end
+
+            UserInputService.InputBegan:Connect(function(input, isTyping)
+                if isTyping then return end
+                if input.KeyCode == espKeyState.keyCode then
+                    espEnabled = not espEnabled
+                    if highlight then highlight.Enabled = espEnabled end
+                    notify("Secure ESP", espEnabled and "ENABLED" or "DISABLED", espEnabled and "success" or "error")
+                end
+            end)
+
+            RunService.Heartbeat:Connect(function()
+                local ballPath = getBall()
+                if not ballPath then return end
+                if espEnabled and not ballPath:FindFirstChild("SecureBallHighlight") then
+                    applyHighlight(ballPath)
+                elseif espEnabled then
+                    cleanCompetingHighlights(ballPath)
+                end
+            end)
+            
+            Workspace.DescendantAdded:Connect(function(child)
+                if espEnabled and child:IsA("Highlight") and child.Name ~= "SecureBallHighlight" and child.Parent == getBall() then
+                    child:Destroy()
+                    applyHighlight(getBall())
+                end
+            end)
+        end)
+        notify("Secure ESP", "Loaded! Press " .. espKeyState.keyName .. " to toggle.", "success")
+    end)
+end
+
+-- [[ PREDICTIVE LOCK ]]
+do
+    local row = make("Frame", {Size=UDim2.new(1,0,0,80), BackgroundColor3=SURFACE, Parent=mainPage})
+    corner(8, row); stroke(1, BORDER, row); padding(0,10,0,12,row)
+    make("TextLabel", {Size=UDim2.new(1,-160,0,18), Position=UDim2.new(0,0,0,6), BackgroundTransparency=1, Text="Predictive Lock", TextColor3=TEXT, Font=Enum.Font.GothamSemibold, TextSize=13, TextXAlignment=Enum.TextXAlignment.Left, Parent=row})
+    local lockKeyState = makeKeybindBox("Toggle Key:", Enum.KeyCode.J, "J", row, 50)
+    local btn = make("TextButton", {Size=UDim2.new(0,70,0,28), Position=UDim2.new(1,-70,0.5,-14), BackgroundColor3=ACCENT, Text="Load", TextColor3=TEXT, Font=Enum.Font.GothamBold, TextSize=12, AutoButtonColor=false, Parent=row})
+    corner(6, btn)
+    local loaded = false
+    btn.MouseButton1Click:Connect(function()
+        if loaded then notify("Predictive Lock","Already loaded!","error"); return end
+        loaded = true
+        task.spawn(function()
+            local Workspace = game:GetService("Workspace")
+            local RunService = game:GetService("RunService")
+            local UserInputService = game:GetService("UserInputService")
+            local camera = Workspace.CurrentCamera
+            local LOOK_AHEAD_TIME = 0.15
+            local lockEnabled = false
+
+            local function getBall()
+                local temp = Workspace:FindFirstChild("Temp")
+                local ball = temp and temp:FindFirstChild("Ball")
+                if not ball then ball = Workspace:FindFirstChild("Ball") end
+                if not ball then ball = Workspace:FindFirstChild("Ball", true) end
+                return ball
+            end
+
+            UserInputService.InputBegan:Connect(function(input, isTyping)
+                if isTyping then return end
+                if input.KeyCode == lockKeyState.keyCode then
+                    lockEnabled = not lockEnabled
+                    notify("Predictive Lock", lockEnabled and "ENABLED (Aiming Ahead)" or "DISABLED", lockEnabled and "success" or "error")
+                end
+            end)
+
+            RunService.RenderStepped:Connect(function()
+                if not lockEnabled then return end
+                local ball = getBall()
+                if not ball or not ball:IsA("BasePart") then return end
+                local startPos = ball.Position
+                local velocity = ball.AssemblyLinearVelocity
+                local gravity = Vector3.new(0, -Workspace.Gravity, 0) 
+                local predictedPos = startPos + (velocity * LOOK_AHEAD_TIME) + (0.5 * gravity * LOOK_AHEAD_TIME * LOOK_AHEAD_TIME)
+                camera.CFrame = CFrame.lookAt(camera.CFrame.Position, predictedPos)
+            end)
+        end)
+        notify("Predictive Lock", "Loaded! Press " .. lockKeyState.keyName .. " to toggle.", "success")
+    end)
+end
+
+-- [[ BALL PREDICTOR ]]
+do
+    local row = make("Frame", {Size=UDim2.new(1,0,0,80), BackgroundColor3=SURFACE, Parent=mainPage})
+    corner(8, row); stroke(1, BORDER, row); padding(0,10,0,12,row)
+    make("TextLabel", {Size=UDim2.new(1,-160,0,18), Position=UDim2.new(0,0,0,6), BackgroundTransparency=1, Text="Ball Predictor (Path)", TextColor3=TEXT, Font=Enum.Font.GothamSemibold, TextSize=13, TextXAlignment=Enum.TextXAlignment.Left, Parent=row})
+    local predKeyState = makeKeybindBox("Toggle Key:", Enum.KeyCode.P, "P", row, 50)
+    local btn = make("TextButton", {Size=UDim2.new(0,70,0,28), Position=UDim2.new(1,-70,0.5,-14), BackgroundColor3=ACCENT, Text="Load", TextColor3=TEXT, Font=Enum.Font.GothamBold, TextSize=12, AutoButtonColor=false, Parent=row})
+    corner(6, btn)
+    local loaded = false
+    btn.MouseButton1Click:Connect(function()
+        if loaded then notify("Ball Predictor","Already loaded!","error"); return end
+        loaded = true
+        task.spawn(function()
+            local Workspace = game:GetService("Workspace")
+            local RunService = game:GetService("RunService")
+            local UserInputService = game:GetService("UserInputService")
+            local camera = Workspace.CurrentCamera
+            local PREDICTION_TIME = 1.5
+            local POINTS_COUNT = 20
+            local DOT_COLOR = Color3.fromRGB(0, 255, 100)
+            local DOT_SIZE = Vector3.new(0.25, 0.25, 0.25)
+            local predictorEnabled = false
+            local dotPool = {}
+
+            local function getOrCreateDot(index)
+                if dotPool[index] then return dotPool[index] end
+                local dot = Instance.new("Part")
+                dot.Name = "PredictorDot_" .. index
+                dot.Shape = Enum.PartType.Ball
+                dot.Size = DOT_SIZE
+                dot.Color = DOT_COLOR
+                dot.Material = Enum.Material.Neon
+                dot.Anchored = true
+                dot.CanCollide = false
+                dot.CanTouch = false
+                dot.CanQuery = false
+                dot.Parent = camera
+                dotPool[index] = dot
+                return dot
+            end
+
+            local function getBall()
+                local temp = Workspace:FindFirstChild("Temp")
+                local ball = temp and temp:FindFirstChild("Ball")
+                if not ball then ball = Workspace:FindFirstChild("Ball") end
+                if not ball then ball = Workspace:FindFirstChild("Ball", true) end
+                return ball
+            end
+
+            UserInputService.InputBegan:Connect(function(input, isTyping)
+                if isTyping then return end
+                if input.KeyCode == predKeyState.keyCode then
+                    predictorEnabled = not predictorEnabled
+                    notify("Ball Predictor", predictorEnabled and "ENABLED" or "DISABLED", predictorEnabled and "success" or "error")
+                    if not predictorEnabled then
+                        for _, dot in pairs(dotPool) do dot.Transparency = 1 end
+                    end
+                end
+            end)
+
+            RunService.RenderStepped:Connect(function()
+                if not predictorEnabled then return end
+                local ball = getBall()
+                if not ball or not ball:IsA("BasePart") then
+                    for _, dot in pairs(dotPool) do dot.Transparency = 1 end
+                    return
+                end
+                local startPos = ball.Position
+                local velocity = ball.AssemblyLinearVelocity
+                local gravity = Vector3.new(0, -Workspace.Gravity, 0) 
+                local timeStep = PREDICTION_TIME / POINTS_COUNT
+                for i = 1, POINTS_COUNT do
+                    local t = i * timeStep
+                    local predictedPos = startPos + (velocity * t) + (0.5 * gravity * t * t)
+                    local dot = getOrCreateDot(i)
+                    dot.CFrame = CFrame.new(predictedPos)
+                    dot.Transparency = 0
+                end
+            end)
+        end)
+        notify("Ball Predictor", "Loaded! Press " .. predKeyState.keyName .. " to toggle.", "success")
+    end)
+end
+
+-- [[ LAST DICE (AUTO BLOCK) ]]
+do
+    local row = make("Frame", {Size=UDim2.new(1,0,0,80), BackgroundColor3=SURFACE, Parent=mainPage})
+    corner(8, row); stroke(1, BORDER, row); padding(0,10,0,12,row)
+    make("TextLabel", {Size=UDim2.new(1,-160,0,18), Position=UDim2.new(0,0,0,6), BackgroundTransparency=1, Text="Last Dice (Auto Block)", TextColor3=TEXT, Font=Enum.Font.GothamSemibold, TextSize=13, TextXAlignment=Enum.TextXAlignment.Left, Parent=row})
+    local ldKeyState = makeKeybindBox("Hold Key:", Enum.KeyCode.T, "T", row, 50)
+    local btn = make("TextButton", {Size=UDim2.new(0,70,0,28), Position=UDim2.new(1,-70,0.5,-14), BackgroundColor3=ACCENT, Text="Load", TextColor3=TEXT, Font=Enum.Font.GothamBold, TextSize=12, AutoButtonColor=false, Parent=row})
+    corner(6, btn)
+    local loaded = false
+    btn.MouseButton1Click:Connect(function()
+        if loaded then notify("Last Dice","Already loaded!","error"); return end
+        loaded = true
+        task.spawn(function()
+            local Players = game:GetService("Players")
+            local RunService = game:GetService("RunService")
+            local UserInputService = game:GetService("UserInputService")
+            local VirtualInputManager = game:GetService("VirtualInputManager")
+            local Workspace = game:GetService("Workspace")
+            local player = Players.LocalPlayer
+
+            local SHARED_CFG = {
+                AbilityKey = Enum.KeyCode.V, JumpKey = Enum.KeyCode.Space,
+                MinBallVelocity = 80, Gravity = Vector3.new(0, -workspace.Gravity, 0),
+                SequenceDelay = 0.05, BallRadius = 1.0, BounceElasticity = 0.7, MaxBlockHeight = 35
+            }
+            local LAST_DICE_CFG = { Radius = 32, ReactionTime = 0.95 }
+            local lastDiceEnabled = true
+            local blockCooldown = false
+
+            local function performDiceSequence(relImpact)
+                if blockCooldown then return end
+                blockCooldown = true
+                task.spawn(function()
+                    local camera = workspace.CurrentCamera
+                    local isGoingRight = relImpact.X > 0
+                    local angle = isGoingRight and -math.rad(90) or math.rad(90)
+                    camera.CFrame = camera.CFrame * CFrame.Angles(0, angle, 0)
+                    task.wait(0.01)
+                    VirtualInputManager:SendKeyEvent(true, SHARED_CFG.AbilityKey, false, game)
+                    task.wait(0.02)
+                    VirtualInputManager:SendKeyEvent(false, SHARED_CFG.AbilityKey, false, game)
+                    task.wait(SHARED_CFG.SequenceDelay)
+                    VirtualInputManager:SendKeyEvent(true, SHARED_CFG.JumpKey, false, game)
+                    task.wait(0.02)
+                    VirtualInputManager:SendKeyEvent(false, SHARED_CFG.JumpKey, false, game)
+                    task.wait(0.7)
+                    blockCooldown = false
+                end)
+            end
+
+            local function runPhysicsSim(config, onImpact)
+                local character = player.Character
+                local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+                local ball = Workspace:FindFirstChild("Temp") and Workspace.Temp:FindFirstChild("Ball") or Workspace:FindFirstChild("Ball")
+                if not rootPart or not ball then return end
+                local currentVel = ball.AssemblyLinearVelocity
+                if currentVel.Magnitude < SHARED_CFG.MinBallVelocity then return end
+                local externalAcc = Vector3.zero
+                local mfObj = ball:FindFirstChildWhichIsA("VectorForce", true)
+                if mfObj and mfObj.Enabled then
+                    local rawForce = mfObj.Force
+                    if mfObj.RelativeTo == Enum.ActuatorRelativeTo.Attachment0 and mfObj.Attachment0 then
+                        rawForce = mfObj.Attachment0.WorldCFrame:VectorToWorldSpace(rawForce)
+                    end
+                    externalAcc = rawForce / ball.AssemblyMass
+                end
+                local simPos, simVel = ball.Position, currentVel
+                local rootCF = rootPart.CFrame
+                local lastRelZ = rootCF:PointToObjectSpace(simPos).Z
+
+                for i = 1, 75 do
+                    local oldPos = simPos
+                    simVel = simVel + ((SHARED_CFG.Gravity + externalAcc) * 0.015)
+                    simPos = simPos + (simVel * 0.015)
+                    if simPos.Y < SHARED_CFG.BallRadius then
+                        simPos = Vector3.new(simPos.X, SHARED_CFG.BallRadius, simPos.Z)
+                        simVel = Vector3.new(simVel.X, -simVel.Y * SHARED_CFG.BounceElasticity, simVel.Z)
+                    end
+                    local curRel = rootCF:PointToObjectSpace(simPos)
+                    if (lastRelZ * curRel.Z) <= 0 then
+                        local alpha = (math.abs(lastRelZ) / (math.abs(lastRelZ) + math.abs(curRel.Z)))
+                        local exactImpactPos = oldPos:Lerp(simPos, alpha)
+                        local relImpact = rootCF:PointToObjectSpace(exactImpactPos)
+                        local impactTime = (i - 1 + alpha) * 0.015
+                        if (exactImpactPos - rootPart.Position).Magnitude <= config.Radius then
+                            if impactTime <= config.ReactionTime and relImpact.Y < SHARED_CFG.MaxBlockHeight then
+                                onImpact(relImpact)
+                            end
+                        end
+                        break
+                    end
+                    lastRelZ = curRel.Z
+                end
+            end
+
+            RunService.RenderStepped:Connect(function()
+                if lastDiceEnabled and UserInputService:IsKeyDown(ldKeyState.keyCode) then
+                    runPhysicsSim(LAST_DICE_CFG, performDiceSequence)
+                end
+            end)
+        end)
+        notify("Last Dice", "Loaded! Hold " .. ldKeyState.keyName .. " to use.", "success")
+    end)
+end
 
 -- PERFORMANCE TAB
 makeSection("FPS Boost", perfPage)
